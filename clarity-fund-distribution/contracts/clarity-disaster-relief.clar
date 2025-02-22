@@ -94,25 +94,19 @@
 (define-public (update-administrator (new-admin principal))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
-        (var-set contract-administrator new-admin)
-        (unwrap-panic (emit-event "ADMIN_UPDATED" ""))
-        (ok true)))
+        (ok (var-set contract-administrator new-admin))))
 
 (define-public (update-minimum-donation (new-minimum uint))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (asserts! (> new-minimum u0) ERR_INVALID_PARAMETER)
-        (var-set minimum-donation-amount new-minimum)
-        (unwrap-panic (emit-event "MIN_DONATION_UPDATED" ""))
-        (ok true)))
+        (ok (var-set minimum-donation-amount new-minimum))))
 
 (define-public (update-approval-threshold (new-threshold uint))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (asserts! (and (>= new-threshold u1) (<= new-threshold u100)) ERR_INVALID_PARAMETER)
-        (var-set proposal-approval-threshold new-threshold)
-        (unwrap-panic (emit-event "THRESHOLD_UPDATED" ""))
-        (ok true)))
+        (ok (var-set proposal-approval-threshold new-threshold))))
 
 ;; Read-Only Functions
 (define-read-only (get-donor-details (donor-address principal))
@@ -160,13 +154,14 @@
             (try! (nft-mint? disaster-relief-token new-nft-id tx-sender))
             (map-set nft-ownership-registry new-nft-id tx-sender)
             (map-set nft-metadata-registry new-nft-id nft-metadata-base-uri)
-            (unwrap-panic (emit-event "DONATION_RECEIVED" ""))
+            (print "DONATION_RECEIVED")
             (ok true))))
 
 (define-public (register-new-disaster (disaster-name (string-ascii 64)) (severity-level uint) (funding-target uint))
     (let ((new-disaster-id (+ (var-get current-disaster-id) u1)))
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (asserts! (> funding-target u0) ERR_INVALID_PARAMETER)
+        (asserts! (and (>= severity-level u1) (<= severity-level u5)) ERR_INVALID_PARAMETER)
         (begin
             (map-set disaster-registry new-disaster-id
                 {disaster-name: disaster-name,
@@ -175,7 +170,7 @@
                  distributed-funds: u0,
                  is-active: true})
             (var-set current-disaster-id new-disaster-id)
-            (unwrap-panic (emit-event "DISASTER_REGISTERED" disaster-name))
+            (print "DISASTER_REGISTERED")
             (ok new-disaster-id))))
 
 (define-public (submit-relief-proposal 
@@ -194,7 +189,7 @@
                  total-possible-votes: (var-get total-donated-funds),
                  is-executed: false,
                  beneficiary: beneficiary})
-            (unwrap-panic (emit-event "PROPOSAL_SUBMITTED" proposal-description))
+            (print "PROPOSAL_SUBMITTED")
             (ok true))))
 
 (define-public (cast-proposal-vote (disaster-id uint))
@@ -210,7 +205,7 @@
             (merge proposal-data 
                 {vote-count: (+ (get vote-count proposal-data) (get governance-power donor-data))}))
         
-        (unwrap-panic (emit-event "VOTE_CAST" ""))
+        (print "VOTE_CAST")
         (ok true)))
 
 (define-public (execute-proposal (disaster-id uint))
@@ -232,42 +227,44 @@
                 tx-sender
                 (get beneficiary proposal-data))))
         
-        (unwrap-panic (emit-event "PROPOSAL_EXECUTED" ""))
+        (print "PROPOSAL_EXECUTED")
         (ok true)))
 
-(define-public (transfer-nft (token-id uint) (new-owner principal))
+(define-public (transfer-nft (token-id uint) (recipient principal))
     (let ((token-owner (unwrap! (map-get? nft-ownership-registry token-id) ERR_NFT_NOT_FOUND))
           (current-owner-data (get-donor-details tx-sender))
-          (new-owner-data (get-donor-details new-owner)))
+          (recipient-data (get-donor-details recipient)))
         
         (asserts! (is-eq tx-sender token-owner) ERR_NOT_NFT_OWNER)
+        (asserts! (not (is-eq tx-sender recipient)) ERR_INVALID_PARAMETER)
         
         ;; Update governance power
-        (map-set donor-records tx-sender
-            (merge current-owner-data 
-                {governance-power: (- (get governance-power current-owner-data) 
-                                    (/ (get total-donation-amount current-owner-data) 
-                                       (get owned-nft-count current-owner-data))),
-                 owned-nft-count: (- (get owned-nft-count current-owner-data) u1)}))
-        
-        (map-set donor-records new-owner
-            (merge new-owner-data
-                {owned-nft-count: (+ (get owned-nft-count new-owner-data) u1),
-                 governance-power: (+ (get governance-power new-owner-data)
-                                    (/ (get total-donation-amount current-owner-data)
-                                       (get owned-nft-count current-owner-data)))}))
-        
-        ;; Transfer NFT ownership
-        (map-set nft-ownership-registry token-id new-owner)
-        (unwrap-panic (emit-event "NFT_TRANSFERRED" ""))
-        (ok true)))
+        (let ((governance-power-per-nft (/ (get total-donation-amount current-owner-data) 
+                                           (get owned-nft-count current-owner-data))))
+            ;; Remove try! since map-set returns boolean
+            (map-set donor-records tx-sender
+                (merge current-owner-data 
+                    {governance-power: (- (get governance-power current-owner-data) governance-power-per-nft),
+                     owned-nft-count: (- (get owned-nft-count current-owner-data) u1)}))
+            
+            (map-set donor-records recipient
+                (merge recipient-data
+                    {owned-nft-count: (+ (get owned-nft-count recipient-data) u1),
+                     governance-power: (+ (get governance-power recipient-data) governance-power-per-nft)}))
+            
+            ;; Transfer NFT ownership
+            (try! (nft-transfer? disaster-relief-token token-id tx-sender recipient))
+            (map-set nft-ownership-registry token-id recipient)
+            (print "NFT_TRANSFERRED")
+            (ok true))))
 
 ;; Impact Oracle Integration
 (define-public (update-disaster-severity-level (disaster-id uint) (updated-severity uint))
     (let ((disaster-info (unwrap! (get-disaster-details disaster-id) ERR_DISASTER_NOT_FOUND)))
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
+        (asserts! (and (>= updated-severity u1) (<= updated-severity u5)) ERR_INVALID_PARAMETER)
         (begin
             (map-set disaster-registry disaster-id
                 (merge disaster-info {disaster-severity-level: updated-severity}))
-            (unwrap-panic (emit-event "SEVERITY_UPDATED" ""))
+            (print "SEVERITY_UPDATED")
             (ok true))))
