@@ -67,7 +67,7 @@
     uint
     principal)
 
-;; New: Track user votes
+;; Track user votes
 (define-map user-votes 
     {disaster-id: uint, voter: principal} 
     bool)
@@ -95,7 +95,7 @@
     (begin
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (var-set contract-administrator new-admin)
-        (emit-event "ADMIN_UPDATED" (to-ascii (serialize-principal new-admin)))
+        (unwrap-panic (emit-event "ADMIN_UPDATED" ""))
         (ok true)))
 
 (define-public (update-minimum-donation (new-minimum uint))
@@ -103,7 +103,7 @@
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (asserts! (> new-minimum u0) ERR_INVALID_PARAMETER)
         (var-set minimum-donation-amount new-minimum)
-        (emit-event "MIN_DONATION_UPDATED" (to-ascii (serialize-uint new-minimum)))
+        (unwrap-panic (emit-event "MIN_DONATION_UPDATED" ""))
         (ok true)))
 
 (define-public (update-approval-threshold (new-threshold uint))
@@ -111,7 +111,7 @@
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (asserts! (and (>= new-threshold u1) (<= new-threshold u100)) ERR_INVALID_PARAMETER)
         (var-set proposal-approval-threshold new-threshold)
-        (emit-event "THRESHOLD_UPDATED" (to-ascii (serialize-uint new-threshold)))
+        (unwrap-panic (emit-event "THRESHOLD_UPDATED" ""))
         (ok true)))
 
 ;; Read-Only Functions
@@ -160,9 +160,7 @@
             (try! (nft-mint? disaster-relief-token new-nft-id tx-sender))
             (map-set nft-ownership-registry new-nft-id tx-sender)
             (map-set nft-metadata-registry new-nft-id nft-metadata-base-uri)
-            (emit-event "DONATION_RECEIVED" 
-                (to-ascii (concat (serialize-principal tx-sender) 
-                                (serialize-uint donation-amount))))
+            (unwrap-panic (emit-event "DONATION_RECEIVED" ""))
             (ok true))))
 
 (define-public (register-new-disaster (disaster-name (string-ascii 64)) (severity-level uint) (funding-target uint))
@@ -177,8 +175,7 @@
                  distributed-funds: u0,
                  is-active: true})
             (var-set current-disaster-id new-disaster-id)
-            (emit-event "DISASTER_REGISTERED" 
-                (to-ascii (concat disaster-name (serialize-uint new-disaster-id))))
+            (unwrap-panic (emit-event "DISASTER_REGISTERED" disaster-name))
             (ok new-disaster-id))))
 
 (define-public (submit-relief-proposal 
@@ -197,8 +194,7 @@
                  total-possible-votes: (var-get total-donated-funds),
                  is-executed: false,
                  beneficiary: beneficiary})
-            (emit-event "PROPOSAL_SUBMITTED" 
-                (to-ascii (concat (serialize-uint disaster-id) proposal-description)))
+            (unwrap-panic (emit-event "PROPOSAL_SUBMITTED" proposal-description))
             (ok true))))
 
 (define-public (cast-proposal-vote (disaster-id uint))
@@ -214,9 +210,7 @@
             (merge proposal-data 
                 {vote-count: (+ (get vote-count proposal-data) (get governance-power donor-data))}))
         
-        (emit-event "VOTE_CAST" 
-            (to-ascii (concat (serialize-uint disaster-id) 
-                            (serialize-principal tx-sender))))
+        (unwrap-panic (emit-event "VOTE_CAST" ""))
         (ok true)))
 
 (define-public (execute-proposal (disaster-id uint))
@@ -238,9 +232,7 @@
                 tx-sender
                 (get beneficiary proposal-data))))
         
-        (emit-event "PROPOSAL_EXECUTED" 
-            (to-ascii (concat (serialize-uint disaster-id)
-                            (serialize-uint (get requested-amount proposal-data)))))
+        (unwrap-panic (emit-event "PROPOSAL_EXECUTED" ""))
         (ok true)))
 
 (define-public (transfer-nft (token-id uint) (new-owner principal))
@@ -267,9 +259,7 @@
         
         ;; Transfer NFT ownership
         (map-set nft-ownership-registry token-id new-owner)
-        (emit-event "NFT_TRANSFERRED" 
-            (to-ascii (concat (serialize-uint token-id)
-                            (serialize-principal new-owner))))
+        (unwrap-panic (emit-event "NFT_TRANSFERRED" ""))
         (ok true)))
 
 ;; Impact Oracle Integration
@@ -279,7 +269,5 @@
         (begin
             (map-set disaster-registry disaster-id
                 (merge disaster-info {disaster-severity-level: updated-severity}))
-            (emit-event "SEVERITY_UPDATED" 
-                (to-ascii (concat (serialize-uint disaster-id)
-                                (serialize-uint updated-severity))))
+            (unwrap-panic (emit-event "SEVERITY_UPDATED" ""))
             (ok true))))
