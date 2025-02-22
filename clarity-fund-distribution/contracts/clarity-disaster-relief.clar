@@ -94,6 +94,7 @@
 (define-public (update-administrator (new-admin principal))
     (begin
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
+        (asserts! (not (is-eq new-admin (var-get contract-administrator))) ERR_INVALID_PARAMETER)
         (ok (var-set contract-administrator new-admin))))
 
 (define-public (update-minimum-donation (new-minimum uint))
@@ -162,6 +163,7 @@
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (asserts! (> funding-target u0) ERR_INVALID_PARAMETER)
         (asserts! (and (>= severity-level u1) (<= severity-level u5)) ERR_INVALID_PARAMETER)
+        (asserts! (not (is-eq disaster-name "")) ERR_INVALID_PARAMETER)
         (begin
             (map-set disaster-registry new-disaster-id
                 {disaster-name: disaster-name,
@@ -181,6 +183,8 @@
     (let ((disaster-info (unwrap! (get-disaster-details disaster-id) ERR_DISASTER_NOT_FOUND)))
         (asserts! (get is-active disaster-info) ERR_DISASTER_NOT_ACTIVE)
         (asserts! (<= requested-amount (var-get total-donated-funds)) ERR_INSUFFICIENT_BALANCE)
+        (asserts! (not (is-eq proposal-description "")) ERR_INVALID_PARAMETER)
+        (asserts! (not (is-eq beneficiary tx-sender)) ERR_INVALID_PARAMETER)
         (begin
             (map-set relief-fund-proposals disaster-id
                 {proposal-description: proposal-description,
@@ -241,7 +245,6 @@
         ;; Update governance power
         (let ((governance-power-per-nft (/ (get total-donation-amount current-owner-data) 
                                            (get owned-nft-count current-owner-data))))
-            ;; Remove try! since map-set returns boolean
             (map-set donor-records tx-sender
                 (merge current-owner-data 
                     {governance-power: (- (get governance-power current-owner-data) governance-power-per-nft),
@@ -263,6 +266,8 @@
     (let ((disaster-info (unwrap! (get-disaster-details disaster-id) ERR_DISASTER_NOT_FOUND)))
         (asserts! (is-eq tx-sender (var-get contract-administrator)) ERR_UNAUTHORIZED)
         (asserts! (and (>= updated-severity u1) (<= updated-severity u5)) ERR_INVALID_PARAMETER)
+        (asserts! (< disaster-id (+ (var-get current-disaster-id) u1)) ERR_INVALID_PARAMETER)
+        (asserts! (not (is-eq updated-severity (get disaster-severity-level disaster-info))) ERR_INVALID_PARAMETER)
         (begin
             (map-set disaster-registry disaster-id
                 (merge disaster-info {disaster-severity-level: updated-severity}))
